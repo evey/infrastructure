@@ -1,56 +1,208 @@
 #!/bin/bash
 
-# Script de déploiement pour les applications Nawel et Menus
-# Usage: ./deploy.sh [nawel|menus|all]
+# Script de déploiement automatique pour Menus et Nawel
+# Usage: ./deploy.sh [--rebuild] [--menus-only] [--nawel-only]
 
-set -e  # Exit on error
+set -e  # Arrêter en cas d'erreur
 
-APP=${1:-all}
+# Couleurs pour les logs
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-echo "🚀 Démarrage du déploiement : $APP"
+# Fonction pour afficher les logs
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-# Fonction pour déployer une application
-deploy_app() {
-    local app_name=$1
-    echo "📦 Mise à jour de $app_name..."
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-    cd ./$app_name
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Variables
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MENUS_DIR="$SCRIPT_DIR/../menus"
+NAWEL_DIR="$SCRIPT_DIR/../nawel"
+REBUILD=false
+MENUS_ONLY=false
+NAWEL_ONLY=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --rebuild)
+            REBUILD=true
+            shift
+            ;;
+        --menus-only)
+            MENUS_ONLY=true
+            shift
+            ;;
+        --nawel-only)
+            NAWEL_ONLY=true
+            shift
+            ;;
+        --help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --rebuild       Force le rebuild complet des images Docker"
+            echo "  --menus-only    Déployer uniquement Menus"
+            echo "  --nawel-only    Déployer uniquement Nawel"
+            echo "  --help          Afficher cette aide"
+            echo ""
+            echo "Exemples:"
+            echo "  $0                    # Déployer tout sans rebuild"
+            echo "  $0 --rebuild          # Déployer tout avec rebuild"
+            echo "  $0 --menus-only       # Déployer uniquement Menus"
+            exit 0
+            ;;
+        *)
+            log_error "Option inconnue: $1"
+            echo "Utilisez --help pour voir les options disponibles"
+            exit 1
+            ;;
+    esac
+done
+
+log_info "=========================================="
+log_info "🚀 Début du déploiement"
+log_info "=========================================="
+
+# 1. Pull les dernières modifications
+if [ "$NAWEL_ONLY" = false ]; then
+    log_info "📥 Pull des modifications pour Menus..."
+    cd "$MENUS_DIR"
     git pull origin master
-    cd ..
-}
+    log_success "Menus mis à jour"
+fi
 
-# Fonction pour reconstruire les conteneurs
-rebuild_containers() {
-    local services=$1
-    echo "🔨 Reconstruction des conteneurs: $services"
-    docker-compose -f docker-compose.production.yml up -d --build $services
-}
+if [ "$MENUS_ONLY" = false ]; then
+    log_info "📥 Pull des modifications pour Nawel..."
+    cd "$NAWEL_DIR"
+    git pull origin master
+    log_success "Nawel mis à jour"
+fi
 
-# Déploiement selon l'argument
-case $APP in
-    nawel)
-        deploy_app "nawel"
-        rebuild_containers "nawel-backend nawel-frontend"
-        ;;
-    menus)
-        deploy_app "menus"
-        rebuild_containers "menus-backend menus-frontend"
-        ;;
-    all)
-        deploy_app "nawel"
-        deploy_app "menus"
-        rebuild_containers ""
-        ;;
-    *)
-        echo "❌ Usage: $0 [nawel|menus|all]"
-        exit 1
-        ;;
-esac
+log_info "📥 Pull des modifications pour Infrastructure..."
+cd "$SCRIPT_DIR"
+git pull origin master
+log_success "Infrastructure mis à jour"
 
-# Nettoyage des images inutilisées
-echo "🧹 Nettoyage des images Docker inutilisées..."
-docker image prune -f
+# 2. Arrêter les containers
+log_info "🛑 Arrêt des containers..."
+cd "$SCRIPT_DIR"
+docker-compose -f docker-compose.production.yml down
+log_success "Containers arrêtés"
 
-echo "✅ Déploiement terminé!"
-echo "📊 Status des conteneurs:"
-docker-compose -f docker-compose.production.yml ps
+# 3. Rebuild si nécessaire
+if [ "$REBUILD" = true ]; then
+    log_info "🔨 Rebuild des images Docker..."
+
+    if [ "$MENUS_ONLY" = true ]; then
+        docker-compose -f docker-compose.production.yml build --no-cache menus-backend menus-frontend
+        log_success "Images Menus rebuilds"
+    elif [ "$NAWEL_ONLY" = true ]; then
+        docker-compose -f docker-compose.production.yml build --no-cache nawel-backend nawel-frontend
+        log_success "Images Nawel rebuilds"
+    else
+        docker-compose -f docker-compose.production.yml build --no-cache
+        log_success "Toutes les images rebuilds"
+    fi
+else
+    log_info "ℹ️  Pas de rebuild (utilisez --rebuild pour forcer)"
+fi
+
+# 4. Démarrer les containers
+log_info "▶️  Démarrage des containers..."
+docker-compose -f docker-compose.production.yml up -d
+log_success "Containers démarrés"
+
+# 5. Attendre que les services soient prêts
+log_info "⏳ Attente du démarrage des services..."
+sleep 15
+
+# 6. Vérifier l'état des containers
+log_info "🔍 Vérification de l'état des containers..."
+echo ""
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" --filter "name=menus\|nawel\|mysql"
+echo ""
+
+# 7. Vérifier les logs des backends pour les migrations
+if [ "$NAWEL_ONLY" = false ]; then
+    log_info "🗄️  Vérification des migrations Menus..."
+    if docker logs menus-backend 2>&1 | tail -50 | grep -q "Database migrations completed successfully"; then
+        log_success "Migrations Menus OK"
+    else
+        log_warning "Migrations Menus : vérifier les logs avec 'docker logs menus-backend'"
+    fi
+fi
+
+if [ "$MENUS_ONLY" = false ]; then
+    log_info "🗄️  Vérification des migrations Nawel..."
+    if docker logs nawel-backend 2>&1 | tail -50 | grep -q "Database migrations completed successfully"; then
+        log_success "Migrations Nawel OK"
+    else
+        log_warning "Migrations Nawel : vérifier les logs avec 'docker logs nawel-backend'"
+    fi
+fi
+
+# 8. Tester les endpoints
+log_info "🌐 Test des endpoints..."
+
+if [ "$NAWEL_ONLY" = false ]; then
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:3001 | grep -q "200"; then
+        log_success "Menus Frontend ✓"
+    else
+        log_warning "Menus Frontend : vérifier manuellement"
+    fi
+
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:5001 2>/dev/null | grep -q "200\|404"; then
+        log_success "Menus Backend ✓"
+    else
+        log_warning "Menus Backend : vérifier manuellement"
+    fi
+fi
+
+if [ "$MENUS_ONLY" = false ]; then
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 | grep -q "200"; then
+        log_success "Nawel Frontend ✓"
+    else
+        log_warning "Nawel Frontend : vérifier manuellement"
+    fi
+
+    if curl -s -o /dev/null -w "%{http_code}" http://localhost:5000 2>/dev/null | grep -q "200\|404"; then
+        log_success "Nawel Backend ✓"
+    else
+        log_warning "Nawel Backend : vérifier manuellement"
+    fi
+fi
+
+# 9. Nettoyage
+log_info "🧹 Nettoyage des images inutilisées..."
+docker image prune -f > /dev/null 2>&1
+log_success "Nettoyage effectué"
+
+log_info "=========================================="
+log_success "✅ Déploiement terminé avec succès !"
+log_info "=========================================="
+echo ""
+log_info "🌍 Applications accessibles à :"
+log_info "  • Menus: https://menus.nironi.com"
+log_info "  • Nawel: https://nawel.nironi.com"
+echo ""
+log_info "📊 Pour voir les logs en temps réel :"
+log_info "  • docker logs -f menus-backend"
+log_info "  • docker logs -f nawel-backend"
+log_info "  • docker logs -f menus-frontend"
+log_info "  • docker logs -f nawel-frontend"
