@@ -1,0 +1,116 @@
+version: '3.8'
+
+services:
+  # ========================================
+  # MySQL Database (partagée par les 2 apps)
+  # ========================================
+  mysql:
+    image: mysql:8.0
+    container_name: shared-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: ${MYSQL_USER_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql-init:/docker-entrypoint-initdb.d
+    networks:
+      - apps-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========================================
+  # NAWEL Application
+  # ========================================
+  nawel-backend:
+    build:
+      context: ./nawel/backend/Nawel.Api
+      dockerfile: Dockerfile
+    container_name: nawel-backend
+    restart: always
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=nawel;User=app_user;Password=${MYSQL_USER_PASSWORD};
+      - Jwt__Secret=${NAWEL_JWT_SECRET}
+      - Jwt__Issuer=NawelApi
+      - Jwt__Audience=NawelApp
+      - Jwt__ExpirationMinutes=60
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./nawel/backend/uploads:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - apps-network
+
+  nawel-frontend:
+    build:
+      context: ./nawel/frontend/nawel-app
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=https://nawel.nironi.com/api
+    container_name: nawel-frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - nawel-backend
+    networks:
+      - apps-network
+
+  # ========================================
+  # MENUS Application
+  # ========================================
+  menus-backend:
+    build:
+      context: ./menus/backend/Menus.Api
+      dockerfile: Dockerfile
+    container_name: menus-backend
+    restart: always
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - ASPNETCORE_URLS=http://+:5001
+      - ConnectionStrings__DefaultConnection=Server=mysql;Port=3306;Database=menus;User=app_user;Password=${MYSQL_USER_PASSWORD};
+      - Jwt__SecretKey=${MENUS_JWT_SECRET}
+      - Jwt__Issuer=MenusApi
+      - Jwt__Audience=MenusApp
+      - Jwt__ExpirationMinutes=1440
+    ports:
+      - "5001:5001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - apps-network
+
+  menus-frontend:
+    build:
+      context: ./menus/frontend/menus-app
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=https://menus.nironi.com/api
+    container_name: menus-frontend
+    restart: always
+    ports:
+      - "3001:80"
+    depends_on:
+      - menus-backend
+    networks:
+      - apps-network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  apps-network:
+    driver: bridge
