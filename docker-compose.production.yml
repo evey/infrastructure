@@ -30,7 +30,7 @@ services:
   # ========================================
   nawel-backend:
     build:
-      context: ./nawel/backend/Nawel.Api
+      context: ../nawel/backend/Nawel.Api
       dockerfile: Dockerfile
     container_name: nawel-backend
     restart: always
@@ -45,7 +45,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ./nawel/backend/uploads:/app/uploads
+      - ../nawel/backend/uploads:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
@@ -54,7 +54,7 @@ services:
 
   nawel-frontend:
     build:
-      context: ./nawel/frontend/nawel-app
+      context: ../nawel/frontend/nawel-app
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=https://nawel.nironi.com/api
@@ -72,7 +72,7 @@ services:
   # ========================================
   menus-backend:
     build:
-      context: ./menus/backend/Menus.Api
+      context: ../menus/backend/Menus.Api
       dockerfile: Dockerfile
     container_name: menus-backend
     restart: always
@@ -94,7 +94,7 @@ services:
 
   menus-frontend:
     build:
-      context: ./menus/frontend/menus-app
+      context: ../menus/frontend/menus-app
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=https://menus.nironi.com/api
