@@ -42,6 +42,16 @@ services:
       - Jwt__Issuer=NawelApi
       - Jwt__Audience=NawelApp
       - Jwt__ExpirationMinutes=60
+      - USE_SQLITE=false
+      - OPENGRAPH_API_KEY=${OPENGRAPH_API_KEY:-}
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-no-reply@nawel.com}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Nawel}
+      - SMTP_USE_SSL=${SMTP_USE_SSL:-true}
     ports:
       - "5000:5000"
     volumes:
