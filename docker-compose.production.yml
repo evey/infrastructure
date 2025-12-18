@@ -117,6 +117,26 @@ services:
     networks:
       - apps-network
 
+  # ========================================
+  # phpMyAdmin (optionnel)
+  # ========================================
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: phpmyadmin
+    restart: always
+    environment:
+      - PMA_HOST=mysql
+      - PMA_PORT=3306
+      - PMA_ARBITRARY=0
+      - UPLOAD_LIMIT=300M
+    ports:
+      - "8080:80"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - apps-network
+
 volumes:
   mysql_data:
     driver: local
