@@ -99,13 +99,66 @@ cd "$SCRIPT_DIR"
 git pull origin master
 log_success "Infrastructure mis à jour"
 
-# 2. Arrêter les containers
+# 2. Basculer vers les migrations MySQL pour Menus (production)
+if [ "$NAWEL_ONLY" = false ]; then
+    log_info "🔄 Basculement vers les migrations MySQL pour Menus..."
+    cd "$MENUS_DIR/backend"
+
+    # Sauvegarder les migrations actuelles (SQLite) si elles existent
+    if [ -d "Menus.Api/Migrations" ] && [ "$(ls -A Menus.Api/Migrations/*.cs 2>/dev/null)" ]; then
+        log_info "   Sauvegarde des migrations SQLite..."
+        mkdir -p Menus.Api/Migrations/_backup/SQLite
+        cp -f Menus.Api/Migrations/*.cs Menus.Api/Migrations/_backup/SQLite/ 2>/dev/null || true
+    fi
+
+    # Nettoyer le dossier Migrations (actives)
+    rm -f Menus.Api/Migrations/*.cs 2>/dev/null || true
+
+    # Copier les migrations MySQL
+    if [ -d "Menus.Api/Migrations/_backup/MySQL" ] && [ "$(ls -A Menus.Api/Migrations/_backup/MySQL/*.cs 2>/dev/null)" ]; then
+        log_info "   Activation des migrations MySQL..."
+        cp -f Menus.Api/Migrations/_backup/MySQL/*.cs Menus.Api/Migrations/
+        log_success "Migrations MySQL activées pour la production"
+    else
+        log_error "❌ Migrations MySQL introuvables dans Menus.Api/Migrations/_backup/MySQL/"
+        log_error "   Utilisez .\add-migration.ps1 pour générer les migrations MySQL"
+        exit 1
+    fi
+fi
+
+if [ "$MENUS_ONLY" = false ]; then
+    log_info "🔄 Basculement vers les migrations MySQL pour Nawel..."
+    cd "$NAWEL_DIR/backend"
+
+    # Sauvegarder les migrations actuelles (SQLite) si elles existent
+    if [ -d "Nawel.Api/Migrations" ] && [ "$(ls -A Nawel.Api/Migrations/*.cs 2>/dev/null)" ]; then
+        log_info "   Sauvegarde des migrations SQLite..."
+        mkdir -p Nawel.Api/Migrations/_backup/SQLite
+        cp -f Nawel.Api/Migrations/*.cs Nawel.Api/Migrations/_backup/SQLite/ 2>/dev/null || true
+    fi
+
+    # Nettoyer le dossier Migrations (actives)
+    rm -f Nawel.Api/Migrations/*.cs 2>/dev/null || true
+
+    # Copier les migrations MySQL
+    if [ -d "Nawel.Api/Migrations/_backup/MySQL" ] && [ "$(ls -A Nawel.Api/Migrations/_backup/MySQL/*.cs 2>/dev/null)" ]; then
+        log_info "   Activation des migrations MySQL..."
+        cp -f Nawel.Api/Migrations/_backup/MySQL/*.cs Nawel.Api/Migrations/
+        log_success "Migrations MySQL activées pour la production"
+    else
+        log_error "❌ Migrations MySQL introuvables dans Nawel.Api/Migrations/_backup/MySQL/"
+        log_error "   Utilisez .\add-migration.ps1 pour générer les migrations MySQL"
+        exit 1
+    fi
+fi
+
+# 3. Arrêter les containers
 log_info "🛑 Arrêt des containers..."
 cd "$SCRIPT_DIR"
 docker-compose -f docker-compose.production.yml down
 log_success "Containers arrêtés"
 
-# 3. Rebuild si nécessaire
+# 4. Rebuild si nécessaire
 if [ "$REBUILD" = true ]; then
     log_info "🔨 Rebuild des images Docker..."
 
@@ -123,22 +176,22 @@ else
     log_info "ℹ️  Pas de rebuild (utilisez --rebuild pour forcer)"
 fi
 
-# 4. Démarrer les containers
+# 5. Démarrer les containers
 log_info "▶️  Démarrage des containers..."
 docker-compose -f docker-compose.production.yml up -d
 log_success "Containers démarrés"
 
-# 5. Attendre que les services soient prêts
+# 6. Attendre que les services soient prêts
 log_info "⏳ Attente du démarrage des services..."
 sleep 15
 
-# 6. Vérifier l'état des containers
+# 7. Vérifier l'état des containers
 log_info "🔍 Vérification de l'état des containers..."
 echo ""
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" --filter "name=menus\|nawel\|mysql"
 echo ""
 
-# 7. Vérifier les logs des backends pour les migrations
+# 8. Vérifier les logs des backends pour les migrations
 if [ "$NAWEL_ONLY" = false ]; then
     log_info "🗄️  Vérification des migrations Menus..."
     if docker logs menus-backend 2>&1 | tail -50 | grep -q "Database migrations completed successfully"; then
@@ -157,7 +210,7 @@ if [ "$MENUS_ONLY" = false ]; then
     fi
 fi
 
-# 8. Tester les endpoints
+# 9. Tester les endpoints
 log_info "🌐 Test des endpoints..."
 
 if [ "$NAWEL_ONLY" = false ]; then
@@ -188,7 +241,7 @@ if [ "$MENUS_ONLY" = false ]; then
     fi
 fi
 
-# 9. Nettoyage
+# 10. Nettoyage
 log_info "🧹 Nettoyage des images inutilisées..."
 docker image prune -f > /dev/null 2>&1
 log_success "Nettoyage effectué"
