@@ -55,7 +55,7 @@ services:
     ports:
       - "5000:5000"
     volumes:
-      - ../nawel/backend/uploads:/app/uploads
+      - ../nawel/backend/Nawel.Api/uploads:/app/uploads
     depends_on:
       mysql:
         condition: service_healthy
