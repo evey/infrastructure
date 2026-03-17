@@ -52,6 +52,7 @@ services:
       - SMTP_FROM_EMAIL=${SMTP_FROM_EMAIL:-no-reply@nawel.com}
       - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Nawel}
       - SMTP_USE_SSL=${SMTP_USE_SSL:-true}
+      - APP_URL=${NAWEL_APP_URL}
     ports:
       - "5000:5000"
     volumes:
